@@ -5,7 +5,9 @@ import { RequirePermissions } from "../common/decorators/permissions.decorator";
 import { UpdateCompanySettingsDto } from "./dto/update-company-settings.dto";
 import { CompanySettingsService } from "./company-settings.service";
 
-const IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/webp", "image/svg+xml"];
+// Raster-only: SVG is deliberately excluded — a stored SVG is a stored-XSS vector if ever
+// rendered inline, and a company logo doesn't need vector support.
+const IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_LOGO_BYTES = 2 * 1024 * 1024;
 
 @Controller("settings/company")
@@ -35,7 +37,7 @@ export class CompanySettingsController {
   )
   setLogo(@UploadedFile() file?: Express.Multer.File) {
     if (!file) {
-      throw new BadRequestException("No valid image was uploaded (JPEG/PNG/WebP/SVG, max 2MB)");
+      throw new BadRequestException("No valid image was uploaded (JPEG/PNG/WebP, max 2MB)");
     }
     return this.companySettingsService.setLogo(file);
   }

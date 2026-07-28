@@ -5,6 +5,8 @@ import { APP_GUARD } from "@nestjs/core";
 import { EventEmitterModule } from "@nestjs/event-emitter";
 import { ScheduleModule } from "@nestjs/schedule";
 import { ServeStaticModule } from "@nestjs/serve-static";
+import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
+import * as Joi from "joi";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
 import { PrismaModule } from "./prisma/prisma.module";
@@ -28,9 +30,27 @@ import { CompanySettingsModule } from "./company-settings/company-settings.modul
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      // Fails fast at boot on missing/malformed config instead of an opaque runtime
+      // crash the first time the affected code path runs.
+      validationSchema: Joi.object({
+        NODE_ENV: Joi.string().valid("development", "production", "test").default("development"),
+        DATABASE_URL: Joi.string().required(),
+        JWT_ACCESS_SECRET: Joi.string().min(32).required(),
+        JWT_REFRESH_SECRET: Joi.string().min(32).required(),
+        JWT_ACCESS_EXPIRES_IN_SECONDS: Joi.number().default(900),
+        JWT_REFRESH_EXPIRES_IN_SECONDS: Joi.number().default(604800),
+        // AES-256 key: 32 bytes, hex-encoded = 64 hex characters.
+        INTEGRATIONS_ENCRYPTION_KEY: Joi.string().hex().length(64).required(),
+        PORT: Joi.number().default(3001),
+        CORS_ALLOWED_ORIGINS: Joi.string().allow("").optional(),
+      }),
+      validationOptions: { abortEarly: false },
+    }),
     EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 60 }]),
     // Serves uploaded product images/manuals as plain public files — these need to be visible
     // on the public website, so (like the social-post images) they intentionally sit outside
     // the auth/permission guard system entirely.
@@ -58,6 +78,9 @@ import { CompanySettingsModule } from "./company-settings/company-settings.modul
   controllers: [AppController],
   providers: [
     AppService,
+    // Order matters: cheapest/broadest rejection first, then auth, then fine-grained
+    // permission checks.
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
   ],

@@ -14,7 +14,13 @@ export class EncryptionService {
 
   constructor(config: ConfigService) {
     const keyHex = config.getOrThrow<string>("INTEGRATIONS_ENCRYPTION_KEY");
-    this.key = Buffer.from(keyHex, "hex");
+    const key = Buffer.from(keyHex, "hex");
+    if (key.length !== 32) {
+      throw new Error(
+        `INTEGRATIONS_ENCRYPTION_KEY must decode to exactly 32 bytes (64 hex characters) for AES-256; got ${key.length} bytes`,
+      );
+    }
+    this.key = key;
   }
 
   encrypt(plaintext: string): string {

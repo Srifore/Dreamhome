@@ -1,0 +1,89 @@
+name: Build Deploy Artifacts
+
+# Manual trigger only — a production release is a deliberate action, not something that
+# happens implicitly on every push. Building on ubuntu-latest matters here specifically for
+# apps/api: Prisma's query engine binary is platform-specific, so generating it here (rather
+# than on a developer's Windows/Mac machine) is what makes the packaged apps/api artifact
+# actually runnable on Hostinger's Linux server.
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: "Production API URL (baked into the web/website builds at build time)"
+        required: true
+        default: "https://api.dreamhomebengaluru.com"
+      site_url:
+        description: "Production website URL"
+        required: true
+        default: "https://dreamhomebengaluru.com"
+
+env:
+  PNPM_VERSION: 10
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client (Linux engine binary)
+        run: pnpm --filter @dreamhome/api exec prisma generate
+
+      - name: Build all apps
+        run: pnpm -r build
+        env:
+          NEXT_PUBLIC_API_URL: ${{ inputs.api_url }}
+          NEXT_PUBLIC_SITE_URL: ${{ inputs.site_url }}
+
+      # apps/api: `pnpm deploy` packages the app with only its resolved production
+      # dependencies (no devDependencies, no unrelated workspace packages) as real files,
+      # not symlinks — `--legacy` is required because this workspace doesn't set
+      # inject-workspace-packages (nothing here actually depends on packages/shared anyway).
+      - name: Package apps/api
+        run: pnpm --filter @dreamhome/api deploy --prod --legacy dist-package/api
+
+      # apps/web & apps/website: Next.js "standalone" output already resolves its own minimal
+      # node_modules, but (in a monorepo) nests under apps/<name>/ and does not include static
+      # assets or public/ — both must be copied in alongside server.js manually.
+      - name: Package apps/web
+        run: |
+          mkdir -p dist-package/web
+          cp -r apps/web/.next/standalone/. dist-package/web/
+          cp -r apps/web/.next/static dist-package/web/apps/web/.next/static
+          cp -r apps/web/public dist-package/web/apps/web/public
+
+      - name: Package apps/website
+        run: |
+          mkdir -p dist-package/website
+          cp -r apps/website/.next/standalone/. dist-package/website/
+          cp -r apps/website/.next/static dist-package/website/apps/website/.next/static
+          cp -r apps/website/public dist-package/website/apps/website/public
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dreamhome-api
+          path: dist-package/api
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dreamhome-web
+          path: dist-package/web
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dreamhome-website
+          path: dist-package/website
+          retention-days: 14

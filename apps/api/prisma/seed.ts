@@ -96,12 +96,23 @@ async function main() {
     console.log(`  Retired ${retired.count} unused legacy role(s): ${RETIRED_ROLE_NAMES.join(", ")}`);
   }
 
-  const adminPasswordHash = await bcrypt.hash("admin123", 10);
+  // The well-known "admin123" default is fine for local dev, but must never reach a
+  // production database — refuse to seed rather than silently create a guessable login.
+  const seedAdminEmail = process.env.ADMIN_EMAIL ?? "admin@gmail.com";
+  const seedAdminPassword = process.env.ADMIN_PASSWORD;
+  if (!seedAdminPassword && process.env.NODE_ENV === "production") {
+    throw new Error(
+      "Refusing to seed a production database with the default admin password. Set ADMIN_PASSWORD (and optionally ADMIN_EMAIL) before running `prisma db seed`.",
+    );
+  }
+  const adminPasswordHash = await bcrypt.hash(seedAdminPassword ?? "admin123", 10);
   await prisma.user.upsert({
-    where: { email: "admin@gmail.com" },
-    update: { passwordHash: adminPasswordHash },
+    where: { email: seedAdminEmail },
+    // Never overwrite on re-seed — the account may have had its password changed since the
+    // last run, and reseeding (e.g. to refresh catalog data) shouldn't silently revert it.
+    update: {},
     create: {
-      email: "admin@gmail.com",
+      email: seedAdminEmail,
       passwordHash: adminPasswordHash,
       name: "DreamHome Admin",
       roleId: roles.get("Admin")!,
@@ -154,7 +165,11 @@ async function main() {
   console.log(`  Roles: ${ROLES.map((r) => r.name).join(", ")}`);
   console.log(`  Categories: ${Object.keys(CATEGORY_TREE).length} pillars`);
   console.log(`  Brands: ${BRANDS.length}`);
-  console.log("  Admin login: admin@gmail.com / admin123");
+  console.log(
+    seedAdminPassword
+      ? `  Admin login: ${seedAdminEmail} (password set via ADMIN_PASSWORD)`
+      : `  Admin login: ${seedAdminEmail} / admin123 (default dev password — do not use in production)`,
+  );
   console.log("  System bot user: whatsapp-bot@dreamhome.local (inactive, never logs in)");
 }
 

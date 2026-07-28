@@ -1,4 +1,5 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { Public } from "../common/decorators/public.decorator";
 import type { AuthenticatedUser } from "../common/types/authenticated-user";
@@ -12,7 +13,10 @@ import { RefreshTokenDto } from "./dto/refresh-token.dto";
 export class AuthController {
   constructor(private authService: AuthService) {}
 
+  // Tighter than the app-wide default (60/min) — these are unauthenticated and otherwise
+  // brute-forceable with no account lockout.
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @HttpCode(HttpStatus.OK)
   @Post("login")
   login(@Body() dto: LoginDto) {
@@ -20,6 +24,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @HttpCode(HttpStatus.OK)
   @Post("refresh")
   refresh(@Body() dto: RefreshTokenDto) {

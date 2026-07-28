@@ -8,8 +8,8 @@ export class AppController {
 
   @Public()
   @Get("health")
-  health(): { status: string } {
-    return { status: "ok" };
+  health(): Promise<{ status: string }> {
+    return this.appService.checkHealth();
   }
 
   @Get()
