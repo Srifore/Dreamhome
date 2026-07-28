@@ -33,16 +33,21 @@ In hPanel → Domains, for `dreamhomebengaluru.com`:
 - Root domain → already presumably pointed at Hostinger.
 - Add subdomains `erp` and `api` (hPanel → Domains → Subdomains).
 
-## 3. Build production artifacts (GitHub Actions)
+## 3. Build production artifacts (GitLab CI)
 
 Prisma's query engine binary is platform-specific — building on a Windows/Mac dev machine
 and uploading to Hostinger's Linux server can silently produce a broken `apps/api` package.
-The repo's `.github/workflows/deploy.yml` builds on `ubuntu-latest` instead:
+The repo's `.gitlab-ci.yml` builds on this project's registered Linux runner instead:
 
-1. GitHub repo → Actions → **Build Deploy Artifacts** → Run workflow.
-2. Confirm/edit the `api_url`/`site_url` inputs (default to the real production URLs above).
-3. When it finishes, download the three artifacts: `dreamhome-api`, `dreamhome-web`,
-   `dreamhome-website`.
+1. GitLab → this project → **CI/CD → Pipelines**.
+2. Find the pipeline for the commit you want to ship (or **Run pipeline** to start a fresh
+   one on `main`), then manually run the `deploy_artifacts` job (stage: `package`) — it's
+   `when: manual`, so it never runs on an ordinary push.
+3. When it finishes, open the job → **Browse** (or download) its artifacts under
+   `dist-package/api`, `dist-package/web`, `dist-package/website`.
+4. `NEXT_PUBLIC_API_URL`/`NEXT_PUBLIC_SITE_URL` are hardcoded in `.gitlab-ci.yml`'s
+   `deploy_artifacts.variables` to the real production URLs above — edit that file if the
+   domain ever changes.
 
 Each artifact is a self-contained folder — no `pnpm install` needs to run on Hostinger.
 
@@ -142,7 +147,7 @@ hPanel → SSL → enable the free Let's Encrypt certificate for each of the thr
 
 ## Redeploying later
 
-Re-run the GitHub Actions workflow, re-download the three artifacts, re-upload (steps 3–4),
+Re-run the `deploy_artifacts` GitLab CI job, re-download the three artifacts, re-upload (steps 3–4),
 then restart each app from hPanel's Node.js App page — no migration/seed re-run needed
 unless the Prisma schema changed (in which case: `npx prisma migrate deploy` again, seeding
 is safe to skip since it no longer overwrites an existing admin's password).

@@ -1,0 +1,113 @@
+default:
+  image: node:20
+  variables:
+    PNPM_HOME: "$CI_PROJECT_DIR/.pnpm-store"
+  before_script:
+    - corepack enable
+    - corepack prepare pnpm@10 --activate
+    - pnpm config set store-dir "$PNPM_HOME"
+    - pnpm install --frozen-lockfile
+    - pnpm --filter @dreamhome/api exec prisma generate
+  cache:
+    key:
+      files:
+        - pnpm-lock.yaml
+    paths:
+      - .pnpm-store
+
+stages:
+  - lint
+  - verify
+  - build
+  - package
+
+# All three lint jobs mirror the old GitHub Actions CI: apps/api and apps/web have
+# pre-existing lint debt from before CI was enforced (see git history), so those two stay
+# allow_failure until that backlog is cleared. apps/website has none, so it's a real gate.
+lint:api:
+  stage: lint
+  allow_failure: true
+  script:
+    - pnpm --filter @dreamhome/api lint
+
+lint:web:
+  stage: lint
+  allow_failure: true
+  script:
+    - pnpm --filter @dreamhome/web lint
+
+lint:website:
+  stage: lint
+  script:
+    - pnpm --filter @dreamhome/website lint
+
+typecheck:api:
+  stage: verify
+  script:
+    - pnpm --filter @dreamhome/api exec tsc --noEmit -p tsconfig.build.json
+
+typecheck:web:
+  stage: verify
+  script:
+    - pnpm --filter @dreamhome/web exec tsc --noEmit
+
+typecheck:website:
+  stage: verify
+  script:
+    - pnpm --filter @dreamhome/website exec tsc --noEmit
+
+# Unit tests only — every Prisma call is mocked (see apps/api/src/test-utils/prisma-mock.ts),
+# so no Postgres service is needed here.
+test:api:
+  stage: verify
+  script:
+    - pnpm --filter @dreamhome/api test
+
+test:web:
+  stage: verify
+  script:
+    - pnpm --filter @dreamhome/web test
+
+test:website:
+  stage: verify
+  script:
+    - pnpm --filter @dreamhome/website test
+
+build:
+  stage: build
+  variables:
+    NEXT_PUBLIC_API_URL: "http://localhost:3001"
+  script:
+    - pnpm -r build
+
+# Manual-trigger-only: a production release is a deliberate action, not something that
+# happens on every push. Runs on this project's Linux runner specifically so Prisma's
+# platform-specific query engine binary is generated for Linux (matching Hostinger), not
+# whatever OS happens to run `pnpm install` on a developer's machine.
+deploy_artifacts:
+  stage: package
+  rules:
+    - when: manual
+  variables:
+    NEXT_PUBLIC_API_URL: "https://api.dreamhomebengaluru.com"
+    NEXT_PUBLIC_SITE_URL: "https://dreamhomebengaluru.com"
+  script:
+    - pnpm -r build
+    # apps/api: only resolved production dependencies, as real files (not symlinks) —
+    # --legacy is required since this workspace doesn't set inject-workspace-packages.
+    - pnpm --filter @dreamhome/api deploy --prod --legacy dist-package/api
+    # apps/web & apps/website: Next "standalone" output resolves its own minimal
+    # node_modules but (in a monorepo) nests under apps/<name>/ and excludes static
+    # assets/public — both copied in manually, verified against a real local build.
+    - mkdir -p dist-package/web
+    - cp -r apps/web/.next/standalone/. dist-package/web/
+    - cp -r apps/web/.next/static dist-package/web/apps/web/.next/static
+    - cp -r apps/web/public dist-package/web/apps/web/public
+    - mkdir -p dist-package/website
+    - cp -r apps/website/.next/standalone/. dist-package/website/
+    - cp -r apps/website/.next/static dist-package/website/apps/website/.next/static
+    - cp -r apps/website/public dist-package/website/apps/website/public
+  artifacts:
+    paths:
+      - dist-package/
+    expire_in: 14 days
