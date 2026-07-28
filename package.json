@@ -1,0 +1,17 @@
+{
+  "name": "dreamhome-erp",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev:api": "pnpm --filter @dreamhome/api start:dev",
+    "dev:web": "pnpm --filter @dreamhome/web dev",
+    "dev:website": "pnpm --filter @dreamhome/website dev",
+    "build": "pnpm -r build",
+    "prisma:migrate": "pnpm --filter @dreamhome/api prisma migrate dev",
+    "prisma:generate": "pnpm --filter @dreamhome/api prisma generate",
+    "prisma:seed": "pnpm --filter @dreamhome/api prisma db seed"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
